@@ -574,7 +574,9 @@ def finance_dashboard(profile):
 
     show_stats(leads, payments)
 
-    tab1, tab2, tab3 = st.tabs(["Eligible Leads", "Add Payment", "Payment History"])
+   tab1, tab2, tab3, tab4 = st.tabs(
+    ["Eligible Leads", "Add Payment", "Payment History", "Total Per Student"]
+)
 
     with tab1:
         st.dataframe(leads_dataframe(leads), use_container_width=True, hide_index=True)
@@ -584,6 +586,13 @@ def finance_dashboard(profile):
 
     with tab3:
         st.dataframe(payments_dataframe(payments), use_container_width=True, hide_index=True)
+
+    with tab4:
+        st.dataframe(
+            payment_summary_per_student(payments),
+            use_container_width=True,
+            hide_index=True
+        )
 
 
 def principal_dashboard(profile):
