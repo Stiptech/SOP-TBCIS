@@ -517,15 +517,13 @@ def payment_summary_per_student(payments):
         )
 
     df = pd.DataFrame(rows)
-
     df = df[df["status"] == "PAID"]
 
     if df.empty:
         return pd.DataFrame()
 
     summary = (
-        df.groupby(["admission_id", "student_name", "parent_name"], as_index=False)
-        ["amount"]
+        df.groupby(["admission_id", "student_name", "parent_name"], as_index=False)["amount"]
         .sum()
         .rename(columns={"amount": "total_paid"})
     )
@@ -567,6 +565,33 @@ def admin_dashboard(profile):
         update_lead_status(leads)
 
 
+# def finance_dashboard(profile):
+#     st.title("Finance Dashboard")
+#     leads = fetch_leads(profile)
+#     payments = fetch_payments()
+
+#     show_stats(leads, payments)
+
+#    tab1, tab2, tab3, tab4 = st.tabs(
+#     ["Eligible Leads", "Add Payment", "Payment History", "Total Per Student"]
+# )
+
+#     with tab1:
+#         st.dataframe(leads_dataframe(leads), use_container_width=True, hide_index=True)
+
+#     with tab2:
+#         payment_form(profile, leads)
+
+#     with tab3:
+#         st.dataframe(payments_dataframe(payments), use_container_width=True, hide_index=True)
+
+#     with tab4:
+#         st.dataframe(
+#             payment_summary_per_student(payments),
+#             use_container_width=True,
+#             hide_index=True
+#         )
+
 def finance_dashboard(profile):
     st.title("Finance Dashboard")
     leads = fetch_leads(profile)
@@ -574,9 +599,9 @@ def finance_dashboard(profile):
 
     show_stats(leads, payments)
 
-   tab1, tab2, tab3, tab4 = st.tabs(
-    ["Eligible Leads", "Add Payment", "Payment History", "Total Per Student"]
-)
+    tab1, tab2, tab3, tab4 = st.tabs(
+        ["Eligible Leads", "Add Payment", "Payment History", "Total Per Student"]
+    )
 
     with tab1:
         st.dataframe(leads_dataframe(leads), use_container_width=True, hide_index=True)
@@ -593,7 +618,6 @@ def finance_dashboard(profile):
             use_container_width=True,
             hide_index=True
         )
-
 
 def principal_dashboard(profile):
     st.title("Principal Dashboard")
