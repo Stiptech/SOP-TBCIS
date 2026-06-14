@@ -497,6 +497,44 @@ def payments_dataframe(payments):
 
     return pd.DataFrame(rows)
 
+def payment_summary_per_student(payments):
+    if not payments:
+        return pd.DataFrame()
+
+    rows = []
+
+    for payment in payments:
+        lead = payment.get("leads") or {}
+
+        rows.append(
+            {
+                "admission_id": lead.get("admission_id"),
+                "student_name": lead.get("student_name"),
+                "parent_name": lead.get("parent_name"),
+                "amount": float(payment.get("amount") or 0),
+                "status": payment.get("status"),
+            }
+        )
+
+    df = pd.DataFrame(rows)
+
+    df = df[df["status"] == "PAID"]
+
+    if df.empty:
+        return pd.DataFrame()
+
+    summary = (
+        df.groupby(["admission_id", "student_name", "parent_name"], as_index=False)
+        ["amount"]
+        .sum()
+        .rename(columns={"amount": "total_paid"})
+    )
+
+    summary["total_paid"] = summary["total_paid"].apply(
+        lambda x: f"Rp {x:,.0f}".replace(",", ".")
+    )
+
+    return summary
 
 def marketer_dashboard(profile):
     st.title("Marketer Dashboard")
