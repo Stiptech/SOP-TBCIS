@@ -129,6 +129,53 @@ def parse_rupiah(value):
     except ValueError:
         return 0.0
 
+def currency_input(label, key, default_value=0, step=100000):
+    if key not in st.session_state:
+        st.session_state[key] = float(default_value)
+
+    display_key = f"{key}_display"
+
+    if display_key not in st.session_state:
+        st.session_state[display_key] = format_rupiah(
+            st.session_state[key],
+            with_prefix=False
+        )
+
+    def sync_from_text():
+        parsed_value = parse_rupiah(st.session_state[display_key])
+        st.session_state[key] = parsed_value
+        st.session_state[display_key] = format_rupiah(
+            parsed_value,
+            with_prefix=False
+        )
+
+    st.text_input(
+        label,
+        key=display_key,
+        placeholder="Contoh: 1.000.000,00",
+        on_change=sync_from_text,
+    )
+
+    col_minus, col_plus = st.columns(2)
+
+    with col_minus:
+        if st.form_submit_button(f"- {format_rupiah(step, with_prefix=False)}"):
+            st.session_state[key] = max(0, st.session_state[key] - step)
+            st.session_state[display_key] = format_rupiah(
+                st.session_state[key],
+                with_prefix=False
+            )
+
+    with col_plus:
+        if st.form_submit_button(f"+ {format_rupiah(step, with_prefix=False)}"):
+            st.session_state[key] = st.session_state[key] + step
+            st.session_state[display_key] = format_rupiah(
+                st.session_state[key],
+                with_prefix=False
+            )
+
+    return st.session_state[key]
+
 def normalize_phone(value):
     if value is None:
         return ""
@@ -747,14 +794,12 @@ def billing_item_form(profile, leads):
             description = st.text_input("Description", placeholder="Example: Development Fee")
 
         with col2:
-            amount_due_text = st.text_input(
+            amount_due = currency_input(
                 "Amount Due",
-                value="0,00",
-                placeholder="Contoh: 100.000,00",
+                key="amount_due_input",
+                default_value=0,
+                step=100000
             )
-            due_date = st.date_input("Due Date", value=None)
-
-        amount_due = parse_rupiah(amount_due_text)
 
         submitted = st.form_submit_button("Save Billing Item", type="primary")
 
@@ -892,13 +937,12 @@ def payment_form(profile, obligations, payments):
 
         st.caption(f"Maximum payment: {format_rupiah(balance)}")
 
-        amount_text = st.text_input(
+       amount = currency_input(
             "Amount Paid",
-            value="0,00",
-            placeholder="Contoh: 50.000,00",
+            key="amount_paid_input",
+            default_value=0,
+            step=100000
         )
-
-        amount = parse_rupiah(amount_text)
 
         receipt_number = st.text_input("Receipt Number")
         payment_date = st.date_input("Payment Date", value=date.today())
