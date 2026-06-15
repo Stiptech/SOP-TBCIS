@@ -129,52 +129,6 @@ def parse_rupiah(value):
     except ValueError:
         return 0.0
 
-def currency_input(label, key, default_value=0, step=100000):
-    if key not in st.session_state:
-        st.session_state[key] = float(default_value)
-
-    display_key = f"{key}_display"
-
-    if display_key not in st.session_state:
-        st.session_state[display_key] = format_rupiah(
-            st.session_state[key],
-            with_prefix=False
-        )
-
-    def sync_from_text():
-        parsed_value = parse_rupiah(st.session_state[display_key])
-        st.session_state[key] = parsed_value
-        st.session_state[display_key] = format_rupiah(
-            parsed_value,
-            with_prefix=False
-        )
-
-    st.text_input(
-        label,
-        key=display_key,
-        placeholder="Contoh: 1.000.000,00",
-        on_change=sync_from_text,
-    )
-
-    col_minus, col_plus = st.columns(2)
-
-    with col_minus:
-        if st.form_submit_button(f"- {format_rupiah(step, with_prefix=False)}"):
-            st.session_state[key] = max(0, st.session_state[key] - step)
-            st.session_state[display_key] = format_rupiah(
-                st.session_state[key],
-                with_prefix=False
-            )
-
-    with col_plus:
-        if st.form_submit_button(f"+ {format_rupiah(step, with_prefix=False)}"):
-            st.session_state[key] = st.session_state[key] + step
-            st.session_state[display_key] = format_rupiah(
-                st.session_state[key],
-                with_prefix=False
-            )
-
-    return st.session_state[key]
 
 def normalize_phone(value):
     if value is None:
@@ -188,7 +142,6 @@ def normalize_phone(value):
 
     if text.startswith("+62"):
         text = "0" + text[3:]
-
     elif text.startswith("62"):
         text = "0" + text[2:]
 
@@ -198,7 +151,8 @@ def normalize_phone(value):
 def is_valid_phone(value):
     phone = normalize_phone(value)
 
-    return phone.isdigit() and 10 <= len(phone) <= 12
+    return phone.isdigit() and phone.startswith("0") and 10 <= len(phone) <= 12
+
 
 def get_supabase():
     url = get_secret("SUPABASE_URL")
@@ -535,14 +489,14 @@ def lead_form(profile):
         submitted = st.form_submit_button("Save Lead", type="primary")
 
     if submitted:
-       if not parent_name or not parent_phone or not student_name or not target_class:
-        st.warning("Parent name, phone, student name, and target class are required.")
-        return
-    
+        if not parent_name or not parent_phone or not student_name or not target_class:
+            st.warning("Parent name, phone, student name, and target class are required.")
+            return
+
         parent_phone = normalize_phone(parent_phone)
-        
+
         if not is_valid_phone(parent_phone):
-            st.warning("Parent phone must contain numbers only and must be 10 to 12 digits.")
+            st.warning("Parent phone must start with 0 and contain 10 to 12 digits only.")
             return
 
         assigned_marketer_email = profile["email"] if profile["role"] == "MARKETER" else None
@@ -794,18 +748,21 @@ def billing_item_form(profile, leads):
             description = st.text_input("Description", placeholder="Example: Development Fee")
 
         with col2:
-            amount_due = currency_input(
+            amount_due_text = st.text_input(
                 "Amount Due",
-                key="amount_due_input",
-                default_value=0,
-                step=100000
+                value="0,00",
+                placeholder="Contoh: 1.000.000,00",
             )
+            due_date = st.date_input("Due Date", value=None)
+
+        amount_due = parse_rupiah(amount_due_text)
+        st.caption(f"Amount detected: {format_rupiah(amount_due)}")
 
         submitted = st.form_submit_button("Save Billing Item", type="primary")
 
     if submitted:
         if amount_due <= 0:
-            st.warning("Amount due must be greater than 0. Use format like 100.000,00.")
+            st.warning("Amount due must be greater than 0. Use format like 1.000.000,00.")
             return
 
         payload = {
@@ -937,12 +894,14 @@ def payment_form(profile, obligations, payments):
 
         st.caption(f"Maximum payment: {format_rupiah(balance)}")
 
-       amount = currency_input(
+        amount_text = st.text_input(
             "Amount Paid",
-            key="amount_paid_input",
-            default_value=0,
-            step=100000
+            value="0,00",
+            placeholder="Contoh: 50.000,00",
         )
+
+        amount = parse_rupiah(amount_text)
+        st.caption(f"Amount detected: {format_rupiah(amount)}")
 
         receipt_number = st.text_input("Receipt Number")
         payment_date = st.date_input("Payment Date", value=date.today())
