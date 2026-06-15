@@ -109,6 +109,50 @@ def format_rupiah(value, with_prefix=True):
     return formatted
 
 
+def parse_rupiah(value):
+    if value is None:
+        return 0.0
+
+    text = str(value).strip()
+
+    if text == "":
+        return 0.0
+
+    text = text.replace("Rp", "")
+    text = text.replace("rp", "")
+    text = text.replace(" ", "")
+    text = text.replace(".", "")
+    text = text.replace(",", ".")
+
+    try:
+        return float(text)
+    except ValueError:
+        return 0.0
+
+def normalize_phone(value):
+    if value is None:
+        return ""
+
+    text = str(value).strip()
+    text = text.replace(" ", "")
+    text = text.replace("-", "")
+    text = text.replace("(", "")
+    text = text.replace(")", "")
+
+    if text.startswith("+62"):
+        text = "0" + text[3:]
+
+    elif text.startswith("62"):
+        text = "0" + text[2:]
+
+    return text
+
+
+def is_valid_phone(value):
+    phone = normalize_phone(value)
+
+    return phone.isdigit() and 10 <= len(phone) <= 12
+
 def get_supabase():
     url = get_secret("SUPABASE_URL")
     key = get_secret("SUPABASE_ANON_KEY")
@@ -444,8 +488,14 @@ def lead_form(profile):
         submitted = st.form_submit_button("Save Lead", type="primary")
 
     if submitted:
-        if not parent_name or not parent_phone or not student_name or not target_class:
-            st.warning("Parent name, phone, student name, and target class are required.")
+       if not parent_name or not parent_phone or not student_name or not target_class:
+        st.warning("Parent name, phone, student name, and target class are required.")
+        return
+    
+        parent_phone = normalize_phone(parent_phone)
+        
+        if not is_valid_phone(parent_phone):
+            st.warning("Parent phone must contain numbers only and must be 10 to 12 digits.")
             return
 
         assigned_marketer_email = profile["email"] if profile["role"] == "MARKETER" else None
@@ -562,12 +612,12 @@ def special_condition_form(profile, leads):
 
         payment_reason = st.text_area(
             "Reason for Partial Payment or Installment",
-            placeholder="Example: Parent can pay Rp 500.000 first due to temporary cash flow issue.",
+            placeholder="Example: Parent can pay Rp 500.000,00 first due to temporary cash flow issue.",
         )
 
         payment_plan = st.text_area(
             "Proposed Payment Plan",
-            placeholder="Example: Rp 500.000 today, remaining balance paid in 3 installments.",
+            placeholder="Example: Rp 500.000,00 today, remaining balance paid in 3 installments.",
         )
 
         submitted = st.form_submit_button("Save Special Condition", type="primary")
@@ -697,14 +747,20 @@ def billing_item_form(profile, leads):
             description = st.text_input("Description", placeholder="Example: Development Fee")
 
         with col2:
-            amount_due = st.number_input("Amount Due", min_value=0.0, step=100000.0)
+            amount_due_text = st.text_input(
+                "Amount Due",
+                value="0,00",
+                placeholder="Contoh: 100.000,00",
+            )
             due_date = st.date_input("Due Date", value=None)
+
+        amount_due = parse_rupiah(amount_due_text)
 
         submitted = st.form_submit_button("Save Billing Item", type="primary")
 
     if submitted:
         if amount_due <= 0:
-            st.warning("Amount due must be greater than 0.")
+            st.warning("Amount due must be greater than 0. Use format like 100.000,00.")
             return
 
         payload = {
@@ -834,12 +890,16 @@ def payment_form(profile, obligations, payments):
         selected_obligation = selected_tuple[1]
         balance = selected_tuple[2]
 
-        amount = st.number_input(
+        st.caption(f"Maximum payment: {format_rupiah(balance)}")
+
+        amount_text = st.text_input(
             "Amount Paid",
-            min_value=0.0,
-            max_value=float(balance),
-            step=100000.0,
+            value="0,00",
+            placeholder="Contoh: 50.000,00",
         )
+
+        amount = parse_rupiah(amount_text)
+
         receipt_number = st.text_input("Receipt Number")
         payment_date = st.date_input("Payment Date", value=date.today())
         notes = st.text_area("Notes")
@@ -848,7 +908,11 @@ def payment_form(profile, obligations, payments):
 
     if submitted:
         if amount <= 0:
-            st.warning("Amount must be greater than 0.")
+            st.warning("Amount must be greater than 0. Use format like 50.000,00.")
+            return
+
+        if amount > balance:
+            st.warning(f"Amount paid cannot be more than the balance: {format_rupiah(balance)}")
             return
 
         payload = {
