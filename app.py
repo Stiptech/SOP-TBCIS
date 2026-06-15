@@ -9,6 +9,7 @@ from supabase import create_client
 APP_TITLE = "TBCIS Admission Management System"
 SCHOOL_NAME = "Terang Bangsa Cambridge International School"
 
+
 LEAD_STATUSES = [
     "NEW_LEAD",
     "CONTACTED",
@@ -26,6 +27,7 @@ LEAD_STATUSES = [
     "LOST",
 ]
 
+
 FINANCE_VISIBLE_STATUSES = [
     "DEAL",
     "REGISTRATION_FORM_PURCHASED",
@@ -36,17 +38,14 @@ FINANCE_VISIBLE_STATUSES = [
     "ENROLLED",
 ]
 
+
 PAYMENT_CATEGORIES = [
     "REGISTRATION_FORM",
     "REGISTRATION_FEE",
     "DEVELOPMENT_FEE",
     "UNIFORM_FEE",
-    "TUITION_FEE",
-    "SPP",
-    "BOOK_FEE",
-    "ACTIVITY_FEE",
-    "OTHER",
 ]
+
 
 SPECIAL_CONDITION_TYPES = [
     "FINANCIAL_DIFFICULTY",
@@ -58,6 +57,7 @@ SPECIAL_CONDITION_TYPES = [
     "OTHER",
 ]
 
+
 SPECIAL_CONDITION_STATUSES = [
     "ACTIVE",
     "MONITORING",
@@ -66,7 +66,11 @@ SPECIAL_CONDITION_STATUSES = [
 ]
 
 
-st.set_page_config(page_title=APP_TITLE, page_icon="🎓", layout="wide")
+st.set_page_config(
+    page_title=APP_TITLE,
+    page_icon="🎓",
+    layout="wide",
+)
 
 
 def get_secret(name: str) -> str:
@@ -76,15 +80,33 @@ def get_secret(name: str) -> str:
             return value
     except Exception:
         pass
+
     return os.getenv(name, "")
 
 
 def get_attr(obj, name, default=None):
     if obj is None:
         return default
+
     if isinstance(obj, dict):
         return obj.get(name, default)
+
     return getattr(obj, name, default)
+
+
+def format_rupiah(value, with_prefix=True):
+    if value is None or value == "":
+        value = 0
+
+    number = float(value)
+
+    formatted = f"{number:,.2f}"
+    formatted = formatted.replace(",", "X").replace(".", ",").replace("X", ".")
+
+    if with_prefix:
+        return f"Rp {formatted}"
+
+    return formatted
 
 
 def get_supabase():
@@ -119,9 +141,10 @@ def supabase_data(response):
 
 
 def load_profile(email: str):
+    sb = get_supabase()
+
     result = (
-        get_supabase()
-        .table("app_users")
+        sb.table("app_users")
         .select("email, full_name, role, active")
         .eq("email", email.lower())
         .limit(1)
@@ -129,10 +152,12 @@ def load_profile(email: str):
     )
 
     rows = supabase_data(result)
+
     if not rows:
         return None
 
     profile = rows[0]
+
     if profile.get("active") is not True:
         return None
 
@@ -143,6 +168,16 @@ def clear_auth_state():
     for key in ["access_token", "refresh_token", "user_email", "profile"]:
         if key in st.session_state:
             del st.session_state[key]
+
+
+def logout():
+    try:
+        get_supabase().auth.sign_out()
+    except Exception:
+        pass
+
+    clear_auth_state()
+    st.rerun()
 
 
 def login_page():
@@ -177,8 +212,10 @@ def login_page():
                 st.warning("Fill in email and password.")
                 return
 
+            sb = get_supabase()
+
             try:
-                auth_response = get_supabase().auth.sign_in_with_password(
+                auth_response = sb.auth.sign_in_with_password(
                     {
                         "email": email.strip().lower(),
                         "password": password,
@@ -204,6 +241,7 @@ def login_page():
             st.session_state["user_email"] = user_email.lower()
 
             profile = load_profile(user_email)
+
             if not profile:
                 clear_auth_state()
                 st.error("Access denied. This email is not active in app_users.")
@@ -217,20 +255,13 @@ def login_page():
                 st.warning("Type your email first.")
                 return
 
+            sb = get_supabase()
+
             try:
-                get_supabase().auth.reset_password_for_email(email.strip().lower())
+                sb.auth.reset_password_for_email(email.strip().lower())
                 st.success("Password reset email sent.")
             except Exception as exc:
                 st.error(f"Could not send reset email: {exc}")
-
-
-def logout():
-    try:
-        get_supabase().auth.sign_out()
-    except Exception:
-        pass
-    clear_auth_state()
-    st.rerun()
 
 
 def app_sidebar(profile):
@@ -246,12 +277,15 @@ def app_sidebar(profile):
     st.sidebar.info("Dashboard access follows your assigned role.")
 
     st.sidebar.divider()
+
     if st.sidebar.button("Logout", use_container_width=True):
         logout()
 
 
 def fetch_leads(profile):
-    query = get_supabase().table("leads").select("*").order("created_at", desc=True)
+    sb = get_supabase()
+
+    query = sb.table("leads").select("*").order("created_at", desc=True)
 
     if profile["role"] == "MARKETER":
         query = query.eq("assigned_marketer_email", profile["email"])
@@ -259,11 +293,13 @@ def fetch_leads(profile):
     if profile["role"] == "FINANCE":
         query = query.in_("status", FINANCE_VISIBLE_STATUSES)
 
-    return supabase_data(query.execute())
+    response = query.execute()
+
+    return supabase_data(response)
 
 
 def fetch_payment_obligations():
-    return supabase_data(
+    response = (
         get_supabase()
         .table("payment_obligations")
         .select("*, leads(admission_id, student_name, parent_name)")
@@ -271,19 +307,27 @@ def fetch_payment_obligations():
         .execute()
     )
 
+    return supabase_data(response)
+
 
 def fetch_payments():
-    return supabase_data(
+    response = (
         get_supabase()
         .table("payments")
-        .select("*, leads(admission_id, student_name, parent_name), payment_obligations(category, description, amount_due, due_date)")
+        .select(
+            "*, "
+            "leads(admission_id, student_name, parent_name), "
+            "payment_obligations(category, description, amount_due, due_date)"
+        )
         .order("created_at", desc=True)
         .execute()
     )
 
+    return supabase_data(response)
+
 
 def fetch_special_conditions():
-    return supabase_data(
+    response = (
         get_supabase()
         .table("admission_special_conditions")
         .select("*, leads(admission_id, student_name, parent_name)")
@@ -291,9 +335,11 @@ def fetch_special_conditions():
         .execute()
     )
 
+    return supabase_data(response)
+
 
 def fetch_audit_logs():
-    return supabase_data(
+    response = (
         get_supabase()
         .table("audit_logs")
         .select("*")
@@ -302,21 +348,29 @@ def fetch_audit_logs():
         .execute()
     )
 
+    return supabase_data(response)
+
 
 def count_status(leads, status):
     return len([item for item in leads if item.get("status") == status])
 
 
 def total_paid_all(payments):
-    return sum(float(item.get("amount") or 0) for item in payments if item.get("status") == "PAID")
+    return sum(
+        float(item.get("amount") or 0)
+        for item in payments
+        if item.get("status") == "PAID"
+    )
 
 
 def show_stats(leads, payments=None):
     payments = payments or []
+
     enrolled = count_status(leads, "ENROLLED")
     conversion = f"{round((enrolled / len(leads)) * 100)}%" if leads else "0%"
 
     cols = st.columns(6)
+
     cols[0].metric("Total Leads", len(leads))
     cols[1].metric("Interested", count_status(leads, "INTERESTED"))
     cols[2].metric("Visit/Trial", count_status(leads, "VISIT_TRIAL_SCHEDULED"))
@@ -325,7 +379,7 @@ def show_stats(leads, payments=None):
     cols[5].metric("Conversion", conversion)
 
     if payments:
-        st.metric("Total Paid, All Students", f"Rp {total_paid_all(payments):,.0f}".replace(",", "."))
+        st.metric("Total Paid, All Students", format_rupiah(total_paid_all(payments)))
 
 
 def leads_dataframe(leads):
@@ -333,6 +387,7 @@ def leads_dataframe(leads):
         return pd.DataFrame()
 
     df = pd.DataFrame(leads)
+
     columns = [
         "admission_id",
         "source",
@@ -348,6 +403,7 @@ def leads_dataframe(leads):
     ]
 
     existing = [col for col in columns if col in df.columns]
+
     return df[existing]
 
 
@@ -358,14 +414,27 @@ def lead_form(profile):
         col1, col2 = st.columns(2)
 
         with col1:
-            source = st.selectbox("Source", ["Website", "Social Media", "Education Fair", "Referral", "Walk-in", "Marketer Approach"])
+            source = st.selectbox(
+                "Source",
+                [
+                    "Website",
+                    "Social Media",
+                    "Education Fair",
+                    "Referral",
+                    "Walk-in",
+                    "Marketer Approach",
+                ],
+            )
             parent_name = st.text_input("Parent Name")
             parent_phone = st.text_input("Parent Phone")
             parent_email = st.text_input("Parent Email")
 
         with col2:
             student_name = st.text_input("Student Name")
-            target_level = st.selectbox("Target Level", ["EY", "Primary", "Lower Secondary", "Upper Secondary"])
+            target_level = st.selectbox(
+                "Target Level",
+                ["EY", "Primary", "Lower Secondary", "Upper Secondary"],
+            )
             target_class = st.text_input("Target Class")
             academic_year = st.text_input("Academic Year", value="2026/2027")
 
@@ -424,10 +493,13 @@ def update_lead_status(leads):
         new_status = st.selectbox(
             "Status",
             LEAD_STATUSES,
-            index=LEAD_STATUSES.index(selected["status"]) if selected.get("status") in LEAD_STATUSES else 0,
+            index=LEAD_STATUSES.index(selected["status"])
+            if selected.get("status") in LEAD_STATUSES
+            else 0,
         )
         next_follow_up = st.date_input("Next Follow Up Date", value=None)
         notes = st.text_area("Follow Up Notes", value=selected.get("notes") or "")
+
         submitted = st.form_submit_button("Update Status", type="primary")
 
     if submitted:
@@ -444,7 +516,6 @@ def update_lead_status(leads):
             st.rerun()
         except Exception as exc:
             st.error(f"Could not update status: {exc}")
-
 
 
 def special_condition_form(profile, leads):
@@ -466,25 +537,34 @@ def special_condition_form(profile, leads):
         col1, col2 = st.columns(2)
 
         with col1:
+            payment_category = st.selectbox(
+                "Payment Category with Problem",
+                PAYMENT_CATEGORIES,
+            )
             condition_type = st.selectbox("Condition Type", SPECIAL_CONDITION_TYPES)
             status = st.selectbox("Status", SPECIAL_CONDITION_STATUSES)
-            follow_up_date = st.date_input("Finance Follow Up Date", value=None)
 
         with col2:
+            follow_up_date = st.date_input("Finance Follow Up Date", value=None)
             summary = st.text_input(
                 "Short Summary",
                 placeholder="Example: Parent requests installment for development fee",
             )
-            requested_by = st.text_input("Requested By", placeholder="Example: Father / Mother")
+            requested_by = st.text_input(
+                "Requested By",
+                placeholder="Example: Father / Mother",
+            )
 
         detail = st.text_area(
             "Condition Detail",
             placeholder="Explain the parent's situation clearly and objectively.",
         )
+
         payment_reason = st.text_area(
             "Reason for Partial Payment or Installment",
             placeholder="Example: Parent can pay Rp 500.000 first due to temporary cash flow issue.",
         )
+
         payment_plan = st.text_area(
             "Proposed Payment Plan",
             placeholder="Example: Rp 500.000 today, remaining balance paid in 3 installments.",
@@ -499,6 +579,7 @@ def special_condition_form(profile, leads):
 
         payload = {
             "lead_id": selected["id"],
+            "payment_category": payment_category,
             "condition_type": condition_type,
             "summary": summary,
             "detail": detail or None,
@@ -523,14 +604,17 @@ def special_conditions_dataframe(conditions):
         return pd.DataFrame()
 
     rows = []
+
     for condition in conditions:
         lead = condition.get("leads") or {}
+
         rows.append(
             {
                 "created_at": condition.get("created_at"),
                 "admission_id": lead.get("admission_id"),
                 "student_name": lead.get("student_name"),
                 "parent_name": lead.get("parent_name"),
+                "payment_category": condition.get("payment_category"),
                 "condition_type": condition.get("condition_type"),
                 "summary": condition.get("summary"),
                 "payment_reason": condition.get("payment_reason"),
@@ -544,32 +628,50 @@ def special_conditions_dataframe(conditions):
     return pd.DataFrame(rows)
 
 
-def show_special_conditions_for_lead(lead, conditions):
+def get_special_condition_text(lead, conditions, payment_category=None):
     lead_conditions = [
         item for item in conditions
         if item.get("lead_id") == lead.get("id")
     ]
 
-    st.caption("Special Conditions")
+    if payment_category:
+        lead_conditions = [
+            item for item in lead_conditions
+            if item.get("payment_category") == payment_category
+        ]
 
     if not lead_conditions:
-        st.info("No special condition recorded for this student.")
-        return
+        return "-"
 
-    rows = []
+    texts = []
+
     for condition in lead_conditions:
-        rows.append(
-            {
-                "type": condition.get("condition_type"),
-                "summary": condition.get("summary"),
-                "reason": condition.get("payment_reason"),
-                "payment_plan": condition.get("payment_plan"),
-                "follow_up_date": condition.get("follow_up_date"),
-                "status": condition.get("status"),
-            }
-        )
+        parts = []
 
-    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        if condition.get("payment_category"):
+            parts.append(condition.get("payment_category"))
+
+        if condition.get("condition_type"):
+            parts.append(condition.get("condition_type"))
+
+        if condition.get("summary"):
+            parts.append(condition.get("summary"))
+
+        if condition.get("payment_reason"):
+            parts.append(f"Reason: {condition.get('payment_reason')}")
+
+        if condition.get("payment_plan"):
+            parts.append(f"Plan: {condition.get('payment_plan')}")
+
+        if condition.get("follow_up_date"):
+            parts.append(f"Follow up: {condition.get('follow_up_date')}")
+
+        if condition.get("status"):
+            parts.append(f"Status: {condition.get('status')}")
+
+        texts.append(" | ".join(parts))
+
+    return " || ".join(texts)
 
 
 def billing_item_form(profile, leads):
@@ -589,9 +691,11 @@ def billing_item_form(profile, leads):
         selected = options[selected_label]
 
         col1, col2 = st.columns(2)
+
         with col1:
             category = st.selectbox("Billing Category", PAYMENT_CATEGORIES)
-            description = st.text_input("Description", placeholder="Example: SPP July 2026")
+            description = st.text_input("Description", placeholder="Example: Development Fee")
+
         with col2:
             amount_due = st.number_input("Amount Due", min_value=0.0, step=100000.0)
             due_date = st.date_input("Due Date", value=None)
@@ -623,13 +727,18 @@ def billing_item_form(profile, leads):
 
 def obligation_paid_map(payments):
     paid = {}
+
     for payment in payments:
         if payment.get("status") != "PAID":
             continue
+
         obligation_id = payment.get("obligation_id")
+
         if not obligation_id:
             continue
+
         paid[obligation_id] = paid.get(obligation_id, 0) + float(payment.get("amount") or 0)
+
     return paid
 
 
@@ -638,6 +747,7 @@ def update_obligation_status(obligation_id):
         return
 
     sb = get_supabase()
+
     obligation_response = (
         sb.table("payment_obligations")
         .select("id, amount_due")
@@ -647,6 +757,7 @@ def update_obligation_status(obligation_id):
     )
 
     obligations = supabase_data(obligation_response)
+
     if not obligations:
         return
 
@@ -660,7 +771,10 @@ def update_obligation_status(obligation_id):
         .execute()
     )
 
-    paid_amount = sum(float(item.get("amount") or 0) for item in supabase_data(payment_response))
+    paid_amount = sum(
+        float(item.get("amount") or 0)
+        for item in supabase_data(payment_response)
+    )
 
     if paid_amount >= amount_due:
         new_status = "PAID"
@@ -669,7 +783,9 @@ def update_obligation_status(obligation_id):
     else:
         new_status = "OPEN"
 
-    sb.table("payment_obligations").update({"status": new_status}).eq("id", obligation_id).execute()
+    sb.table("payment_obligations").update(
+        {"status": new_status}
+    ).eq("id", obligation_id).execute()
 
 
 def payment_form(profile, obligations, payments):
@@ -680,6 +796,7 @@ def payment_form(profile, obligations, payments):
         return
 
     paid_map = obligation_paid_map(payments)
+
     selectable = []
 
     for item in obligations:
@@ -689,10 +806,14 @@ def payment_form(profile, obligations, payments):
 
         if balance > 0:
             lead = item.get("leads") or {}
+
             label = (
-                f"{lead.get('admission_id')} · {lead.get('student_name')} · "
-                f"{item.get('description')} · Balance Rp {balance:,.0f}"
-            ).replace(",", ".")
+                f"{lead.get('admission_id')} · "
+                f"{lead.get('student_name')} · "
+                f"{item.get('description')} · "
+                f"Balance {format_rupiah(balance)}"
+            )
+
             selectable.append((label, item, balance))
 
     if not selectable:
@@ -700,15 +821,29 @@ def payment_form(profile, obligations, payments):
         return
 
     with st.form("payment_form", clear_on_submit=True):
-        selected_label = st.selectbox("Select Billing Item", [item[0] for item in selectable])
-        selected_tuple = next(item for item in selectable if item[0] == selected_label)
+        selected_label = st.selectbox(
+            "Select Billing Item",
+            [item[0] for item in selectable],
+        )
+
+        selected_tuple = next(
+            item for item in selectable
+            if item[0] == selected_label
+        )
+
         selected_obligation = selected_tuple[1]
         balance = selected_tuple[2]
 
-        amount = st.number_input("Amount Paid", min_value=0.0, max_value=float(balance), step=100000.0)
+        amount = st.number_input(
+            "Amount Paid",
+            min_value=0.0,
+            max_value=float(balance),
+            step=100000.0,
+        )
         receipt_number = st.text_input("Receipt Number")
         payment_date = st.date_input("Payment Date", value=date.today())
         notes = st.text_area("Notes")
+
         submitted = st.form_submit_button("Save Payment", type="primary")
 
     if submitted:
@@ -742,6 +877,7 @@ def payments_dataframe(payments):
         return pd.DataFrame()
 
     rows = []
+
     for payment in payments:
         lead = payment.get("leads") or {}
         obligation = payment.get("payment_obligations") or {}
@@ -754,7 +890,7 @@ def payments_dataframe(payments):
                 "parent_name": lead.get("parent_name"),
                 "category": obligation.get("category") or payment.get("item"),
                 "description": obligation.get("description"),
-                "amount_paid": payment.get("amount"),
+                "amount_paid": format_rupiah(payment.get("amount")),
                 "status": payment.get("status"),
                 "receipt_number": payment.get("receipt_number"),
                 "verified_by_email": payment.get("verified_by_email"),
@@ -766,12 +902,25 @@ def payments_dataframe(payments):
 
 def student_payment_summary(leads, obligations, payments):
     paid_map = obligation_paid_map(payments)
+
     rows = []
 
     for lead in leads:
-        lead_obligations = [item for item in obligations if item.get("lead_id") == lead.get("id")]
-        amount_due = sum(float(item.get("amount_due") or 0) for item in lead_obligations)
-        paid = sum(paid_map.get(item.get("id"), 0) for item in lead_obligations)
+        lead_obligations = [
+            item for item in obligations
+            if item.get("lead_id") == lead.get("id")
+        ]
+
+        amount_due = sum(
+            float(item.get("amount_due") or 0)
+            for item in lead_obligations
+        )
+
+        paid = sum(
+            paid_map.get(item.get("id"), 0)
+            for item in lead_obligations
+        )
+
         balance = amount_due - paid
 
         rows.append(
@@ -782,15 +931,13 @@ def student_payment_summary(leads, obligations, payments):
                 "total_due": amount_due,
                 "total_paid": paid,
                 "balance": balance,
-                "payment_status": "PAID" if amount_due > 0 and balance <= 0 else ("PARTIAL" if paid > 0 else "UNPAID"),
+                "payment_status": "PAID"
+                if amount_due > 0 and balance <= 0
+                else ("PARTIAL" if paid > 0 else "UNPAID"),
             }
         )
 
     return pd.DataFrame(rows)
-
-
-def format_rupiah(value):
-    return f"Rp {float(value):,.0f}".replace(",", ".")
 
 
 def student_payment_expanders(leads, obligations, payments, conditions=None):
@@ -800,6 +947,7 @@ def student_payment_expanders(leads, obligations, payments, conditions=None):
 
     conditions = conditions or []
     paid_map = obligation_paid_map(payments)
+
     summary_df = student_payment_summary(leads, obligations, payments)
     display_summary = summary_df.copy()
 
@@ -812,27 +960,45 @@ def student_payment_expanders(leads, obligations, payments, conditions=None):
     st.subheader("Student Payment Details")
 
     for lead in leads:
-        lead_obligations = [item for item in obligations if item.get("lead_id") == lead.get("id")]
-        amount_due = sum(float(item.get("amount_due") or 0) for item in lead_obligations)
-        paid = sum(paid_map.get(item.get("id"), 0) for item in lead_obligations)
+        lead_obligations = [
+            item for item in obligations
+            if item.get("lead_id") == lead.get("id")
+        ]
+
+        amount_due = sum(
+            float(item.get("amount_due") or 0)
+            for item in lead_obligations
+        )
+
+        paid = sum(
+            paid_map.get(item.get("id"), 0)
+            for item in lead_obligations
+        )
 
         title = (
-            f"{lead.get('admission_id')} · {lead.get('student_name')} · "
-            f"{lead.get('parent_name')} · Paid {format_rupiah(paid)} / Due {format_rupiah(amount_due)}"
+            f"{lead.get('admission_id')} · "
+            f"{lead.get('student_name')} · "
+            f"{lead.get('parent_name')} · "
+            f"Paid {format_rupiah(paid)} / Due {format_rupiah(amount_due)}"
         )
 
         with st.expander(title):
-            show_special_conditions_for_lead(lead, conditions)
-
             if not lead_obligations:
                 st.warning("No billing items have been created for this student.")
                 continue
 
             detail_rows = []
+
             for item in lead_obligations:
                 item_paid = paid_map.get(item.get("id"), 0)
                 item_due = float(item.get("amount_due") or 0)
                 item_balance = item_due - item_paid
+
+                special_condition_text = get_special_condition_text(
+                    lead,
+                    conditions,
+                    item.get("category"),
+                )
 
                 detail_rows.append(
                     {
@@ -841,23 +1007,29 @@ def student_payment_expanders(leads, obligations, payments, conditions=None):
                         "amount_due": item_due,
                         "amount_paid": item_paid,
                         "balance": item_balance,
-                        "status": "PAID" if item_balance <= 0 else ("PARTIAL" if item_paid > 0 else "UNPAID"),
+                        "status": "PAID"
+                        if item_balance <= 0
+                        else ("PARTIAL" if item_paid > 0 else "UNPAID"),
                         "due_date": item.get("due_date"),
+                        "special_condition": special_condition_text,
                     }
                 )
 
             detail_df = pd.DataFrame(detail_rows)
+
             for col in ["amount_due", "amount_paid", "balance"]:
                 detail_df[col] = detail_df[col].apply(format_rupiah)
 
             st.dataframe(detail_df, use_container_width=True, hide_index=True)
 
             history_rows = []
+
             for payment in payments:
                 if payment.get("lead_id") != lead.get("id"):
                     continue
 
                 obligation = payment.get("payment_obligations") or {}
+
                 history_rows.append(
                     {
                         "payment_date": payment.get("payment_date"),
@@ -869,6 +1041,7 @@ def student_payment_expanders(leads, obligations, payments, conditions=None):
                 )
 
             st.caption("Payment History")
+
             if history_rows:
                 history_df = pd.DataFrame(history_rows)
                 history_df["amount_paid"] = history_df["amount_paid"].apply(format_rupiah)
@@ -879,6 +1052,7 @@ def student_payment_expanders(leads, obligations, payments, conditions=None):
 
 def marketer_dashboard(profile):
     st.title("Marketer Dashboard")
+
     leads = fetch_leads(profile)
 
     show_stats(leads)
@@ -889,20 +1063,31 @@ def marketer_dashboard(profile):
         lead_form(profile)
 
     with tab2:
-        st.dataframe(leads_dataframe(leads), use_container_width=True, hide_index=True)
+        st.dataframe(
+            leads_dataframe(leads),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 def admin_dashboard(profile):
     st.title("Admin PPDB Dashboard")
+
     leads = fetch_leads(profile)
     conditions = fetch_special_conditions()
 
     show_stats(leads)
 
-    tab1, tab2, tab3 = st.tabs(["All Leads", "Update Follow Up", "Special Condition"])
+    tab1, tab2, tab3 = st.tabs(
+        ["All Leads", "Update Follow Up", "Special Condition"]
+    )
 
     with tab1:
-        st.dataframe(leads_dataframe(leads), use_container_width=True, hide_index=True)
+        st.dataframe(
+            leads_dataframe(leads),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     with tab2:
         update_lead_status(leads)
@@ -911,17 +1096,23 @@ def admin_dashboard(profile):
         special_condition_form(profile, leads)
         st.divider()
         st.subheader("Recorded Special Conditions")
-        st.dataframe(special_conditions_dataframe(conditions), use_container_width=True, hide_index=True)
+        st.dataframe(
+            special_conditions_dataframe(conditions),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 def finance_dashboard(profile):
     st.title("Finance Dashboard")
+
     leads = fetch_leads(profile)
     obligations = fetch_payment_obligations()
     payments = fetch_payments()
     conditions = fetch_special_conditions()
 
     visible_lead_ids = {lead.get("id") for lead in leads}
+
     visible_conditions = [
         item for item in conditions
         if item.get("lead_id") in visible_lead_ids
@@ -930,11 +1121,22 @@ def finance_dashboard(profile):
     show_stats(leads, payments)
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["Eligible Leads", "Add Billing Item", "Add Payment", "Payment History", "Per Student", "Special Conditions"]
+        [
+            "Eligible Leads",
+            "Add Billing Item",
+            "Add Payment",
+            "Payment History",
+            "Per Student",
+            "Special Conditions",
+        ]
     )
 
     with tab1:
-        st.dataframe(leads_dataframe(leads), use_container_width=True, hide_index=True)
+        st.dataframe(
+            leads_dataframe(leads),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     with tab2:
         billing_item_form(profile, leads)
@@ -943,18 +1145,32 @@ def finance_dashboard(profile):
         payment_form(profile, obligations, payments)
 
     with tab4:
-        st.dataframe(payments_dataframe(payments), use_container_width=True, hide_index=True)
+        st.dataframe(
+            payments_dataframe(payments),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     with tab5:
-        student_payment_expanders(leads, obligations, payments, visible_conditions)
+        student_payment_expanders(
+            leads,
+            obligations,
+            payments,
+            visible_conditions,
+        )
 
     with tab6:
         st.subheader("Special Conditions from Admin PPDB")
-        st.dataframe(special_conditions_dataframe(visible_conditions), use_container_width=True, hide_index=True)
+        st.dataframe(
+            special_conditions_dataframe(visible_conditions),
+            use_container_width=True,
+            hide_index=True,
+        )
 
 
 def principal_dashboard(profile):
     st.title("Principal Dashboard")
+
     leads = fetch_leads(profile)
     payments = fetch_payments()
     obligations = fetch_payment_obligations()
@@ -964,26 +1180,62 @@ def principal_dashboard(profile):
     show_stats(leads, payments)
 
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-        ["Leads", "Payments", "Per Student", "Special Conditions", "Audit Logs", "Lead Source"]
+        [
+            "Leads",
+            "Payments",
+            "Per Student",
+            "Special Conditions",
+            "Audit Logs",
+            "Lead Source",
+        ]
     )
 
     with tab1:
-        st.dataframe(leads_dataframe(leads), use_container_width=True, hide_index=True)
+        st.dataframe(
+            leads_dataframe(leads),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     with tab2:
-        st.dataframe(payments_dataframe(payments), use_container_width=True, hide_index=True)
+        st.dataframe(
+            payments_dataframe(payments),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     with tab3:
-        student_payment_expanders(leads, obligations, payments, conditions)
+        student_payment_expanders(
+            leads,
+            obligations,
+            payments,
+            conditions,
+        )
 
     with tab4:
-        st.dataframe(special_conditions_dataframe(conditions), use_container_width=True, hide_index=True)
+        st.dataframe(
+            special_conditions_dataframe(conditions),
+            use_container_width=True,
+            hide_index=True,
+        )
 
     with tab5:
         if audit_logs:
             audit_df = pd.DataFrame(audit_logs)
-            columns = ["created_at", "actor_email", "action", "table_name", "admission_id"]
-            st.dataframe(audit_df[[col for col in columns if col in audit_df.columns]], use_container_width=True, hide_index=True)
+            columns = [
+                "created_at",
+                "actor_email",
+                "action",
+                "table_name",
+                "admission_id",
+            ]
+            existing = [col for col in columns if col in audit_df.columns]
+
+            st.dataframe(
+                audit_df[existing],
+                use_container_width=True,
+                hide_index=True,
+            )
         else:
             st.info("No audit logs yet.")
 
@@ -1085,5 +1337,6 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+
 
 main_app()
