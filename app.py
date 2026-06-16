@@ -41,7 +41,7 @@ FINANCE_VISIBLE_STATUSES = [
 
 PAYMENT_CATEGORIES = [
     "REGISTRATION_FORM",
-    "REGISTRATION_FEE",
+    "ENROLMENT_FEE",
     "DEVELOPMENT_FEE",
     "UNIFORM_FEE",
 ]
@@ -1141,16 +1141,37 @@ def admin_dashboard(profile):
     st.title("Admin PPDB Dashboard")
 
     leads = fetch_leads(profile)
+    obligations = fetch_payment_obligations()
+    payments = fetch_payments()
     conditions = fetch_special_conditions()
+
+    visible_lead_ids = {lead.get("id") for lead in leads}
+
+    visible_obligations = [
+        item for item in obligations
+        if item.get("lead_id") in visible_lead_ids
+    ]
+
+    visible_payments = [
+        item for item in payments
+        if item.get("lead_id") in visible_lead_ids
+    ]
+
+    visible_conditions = [
+        item for item in conditions
+        if item.get("lead_id") in visible_lead_ids
+    ]
 
     show_stats(leads)
 
-    tab1, tab2, tab3, tab4 = st.tabs(
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
         [
             "Input Lead",
             "All Leads",
             "Update Follow Up",
             "Special Condition",
+            "Payment History",
+            "Per Student",
         ]
     )
 
@@ -1172,11 +1193,26 @@ def admin_dashboard(profile):
         st.divider()
         st.subheader("Recorded Special Conditions")
         st.dataframe(
-            special_conditions_dataframe(conditions),
+            special_conditions_dataframe(visible_conditions),
             use_container_width=True,
             hide_index=True,
         )
 
+    with tab5:
+        st.subheader("Payment History")
+        st.dataframe(
+            payments_dataframe(visible_payments),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    with tab6:
+        student_payment_expanders(
+            leads,
+            visible_obligations,
+            visible_payments,
+            visible_conditions,
+        )
 
 def finance_dashboard(profile):
     st.title("Finance Dashboard")
