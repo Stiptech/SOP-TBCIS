@@ -472,11 +472,6 @@ def lead_form(profile):
             )
             parent_name = st.text_input("Parent Name")
             parent_phone = st.text_input("Parent Phone")
-            parent_phone_len = len(parent_phone)
-            if(parent_phone_len < 12):
-                st.warning("Parent phone must contain 12 digits.")
-                return
-            
             parent_email = st.text_input("Parent Email")
 
         with col2:
