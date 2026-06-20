@@ -541,7 +541,7 @@ def inject_css():
         }
 
         html {
-            font-size: 117%;
+            font-size: 100%;
         }
 
         html, body, [data-testid="stAppViewContainer"] {
