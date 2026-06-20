@@ -541,7 +541,7 @@ def inject_css():
         }
 
         html {
-            zoom: 1.15;
+            zoom: 1.05;
         }
 
         html, body, [data-testid="stAppViewContainer"] {
